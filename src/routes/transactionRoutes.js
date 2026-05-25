@@ -5,7 +5,6 @@ const transactionController = require("../controllers/transactionController");
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
-router.post('/webhook/midtrans', transactionController.midtransWebhook);
 
 router.use(authMiddleware);
 
