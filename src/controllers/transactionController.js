@@ -508,39 +508,57 @@ exports.rejectOnlineOrder = async (req, res) => {
 exports.midtransWebhook = async (req, res) => {
   try {
     const payload = req.body;
-    
+    console.log("=== INCOMING WEBHOOK DARI MIDTRANS ===", payload);
+
     const orderIdStr = payload.order_id;
-    const trxId = orderIdStr.split('-')[1];
 
-    if (!trxId) return res.status(400).json({ message: "Invalid Order ID" });
+    // 💡 SOLUSI: Bypass khusus untuk Tombol "TEST" dari Dashboard Midtrans
+    // Jika order_id tidak berawalan 'ONL-', berarti ini cuma test / data palsu
+    if (!orderIdStr || !orderIdStr.startsWith('ONL-')) {
+      console.log("Menerima Test Payload dari Midtrans. Test Berhasil.");
+      // WAJIB KEMBALIKAN 200 OK agar Midtrans memunculkan centang hijau!
+      return res.status(200).json({ status: "success", message: "Test Webhook Midtrans OK!" });
+    }
 
+    const trxId = orderIdStr.split('-')[1]; 
+
+    // WAJIB BALAS 200 OK meskipun ID tidak valid, agar Midtrans tidak men-spam server kita dengan retry
+    if (!trxId) return res.status(200).json({ message: "Invalid Order ID Format" }); 
+
+    // Cari Transaksi di Database kita
     const { data: trx } = await supabase.from('transactions').select('id, depot_id, payment_status, order_status').eq('id', trxId).single();
-    if (!trx) return res.status(404).json({ message: "Transaction not found" });
+    if (!trx) return res.status(200).json({ message: "Transaction not found" });
 
+    // Cari Server Key milik Depot transaksi ini
     const { data: config } = await supabase.from('payment_configs').select('midtrans_server_key').eq('depot_id', trx.depot_id).single();
-    if (!config) return res.status(400).json({ message: "Payment config not found" });
+    if (!config) return res.status(200).json({ message: "Payment config not found" });
 
+    // Verifikasi Keamanan (Signature Key)
+    const rawServerKey = decrypt(config.midtrans_server_key);
     const hash = crypto.createHash('sha512')
-      .update(payload.order_id + payload.status_code + payload.gross_amount + config.midtrans_server_key)
+      .update(payload.order_id + payload.status_code + payload.gross_amount + rawServerKey)
       .digest('hex');
 
     if (hash !== payload.signature_key) {
       return res.status(401).json({ message: "Invalid Signature" });
     }
 
+    // Update Status Berdasarkan Laporan Midtrans
     let payment_status = trx.payment_status;
     let order_status = trx.order_status;
 
     if (payload.transaction_status === 'capture' || payload.transaction_status === 'settlement') {
       payment_status = 'paid';
-      order_status = 'cooking';
+      order_status = 'cooking'; 
     } else if (payload.transaction_status === 'deny' || payload.transaction_status === 'cancel' || payload.transaction_status === 'expire') {
       payment_status = 'failed';
       order_status = 'cancelled';
     }
 
+    // Simpan perubahan ke Database
     await supabase.from('transactions').update({ payment_status, order_status }).eq('id', trxId);
 
+    // Wajib balas 200 OK tanda webhook sukses dieksekusi
     return res.status(200).json({ status: "success" });
   } catch (error) {
     console.error("Webhook Error:", error);
