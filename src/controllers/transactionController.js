@@ -512,38 +512,46 @@ exports.midtransWebhook = async (req, res) => {
 
     const orderIdStr = payload.order_id;
 
-    // 💡 SOLUSI: Bypass khusus untuk Tombol "TEST" dari Dashboard Midtrans
-    // Jika order_id tidak berawalan 'ONL-', berarti ini cuma test / data palsu
-    if (!orderIdStr || !orderIdStr.startsWith('ONL-')) {
-      console.log("Menerima Test Payload dari Midtrans. Test Berhasil.");
-      // WAJIB KEMBALIKAN 200 OK agar Midtrans memunculkan centang hijau!
+    // 1. Bypass khusus untuk Tombol "TEST" dari Dashboard Midtrans
+    if (!orderIdStr || !orderIdStr.startsWith('ONLINE-')) {
+      console.log("✅ Menerima Test Payload dari Midtrans. Test Berhasil.");
       return res.status(200).json({ status: "success", message: "Test Webhook Midtrans OK!" });
     }
 
-    const trxId = orderIdStr.split('-')[1]; 
+    // 2. Cari Transaksi menggunakan midtrans_order_id (BUKAN id biasa)
+    const { data: trx, error: trxErr } = await supabase
+      .from('transactions')
+      .select('id, depot_id, payment_status, order_status')
+      .eq('midtrans_order_id', orderIdStr) // 💡 Perbaikan Krusial
+      .single();
 
-    // WAJIB BALAS 200 OK meskipun ID tidak valid, agar Midtrans tidak men-spam server kita dengan retry
-    if (!trxId) return res.status(200).json({ message: "Invalid Order ID Format" }); 
+    if (trxErr || !trx) {
+      console.log("❌ Transaksi tidak ditemukan di DB:", orderIdStr);
+      return res.status(200).json({ message: "Transaction not found" }); // Tetap balas 200 agar midtrans tidak ngespam
+    }
 
-    // Cari Transaksi di Database kita
-    const { data: trx } = await supabase.from('transactions').select('id, depot_id, payment_status, order_status').eq('id', trxId).single();
-    if (!trx) return res.status(200).json({ message: "Transaction not found" });
+    // 3. Cari Server Key milik Depot
+    const { data: config } = await supabase
+      .from('payment_configs')
+      .select('midtrans_server_key')
+      .eq('depot_id', trx.depot_id)
+      .single();
 
-    // Cari Server Key milik Depot transaksi ini
-    const { data: config } = await supabase.from('payment_configs').select('midtrans_server_key').eq('depot_id', trx.depot_id).single();
     if (!config) return res.status(200).json({ message: "Payment config not found" });
 
-    // Verifikasi Keamanan (Signature Key)
-    const rawServerKey = decrypt(config.midtrans_server_key);
+    // 4. Verifikasi Keamanan (Signature Key) dengan KUNCI ASLI
+    const rawServerKey = decrypt(config.midtrans_server_key); // 💡 Perbaikan Krusial (Wajib di-decrypt)
+    
     const hash = crypto.createHash('sha512')
       .update(payload.order_id + payload.status_code + payload.gross_amount + rawServerKey)
       .digest('hex');
 
     if (hash !== payload.signature_key) {
+      console.log("❌ Signature tidak cocok! Potensi serangan.");
       return res.status(401).json({ message: "Invalid Signature" });
     }
 
-    // Update Status Berdasarkan Laporan Midtrans
+    // 5. Update Status Berdasarkan Laporan Midtrans
     let payment_status = trx.payment_status;
     let order_status = trx.order_status;
 
@@ -555,13 +563,13 @@ exports.midtransWebhook = async (req, res) => {
       order_status = 'cancelled';
     }
 
-    // Simpan perubahan ke Database
-    await supabase.from('transactions').update({ payment_status, order_status }).eq('id', trxId);
+    // 6. Simpan perubahan ke Database
+    await supabase.from('transactions').update({ payment_status, order_status }).eq('id', trx.id);
+    console.log(`✅ Transaksi ${trx.id} berhasil diupdate menjadi: ${payment_status} & ${order_status}`);
 
-    // Wajib balas 200 OK tanda webhook sukses dieksekusi
     return res.status(200).json({ status: "success" });
   } catch (error) {
-    console.error("Webhook Error:", error);
+    console.error("❌ Webhook Error:", error);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
