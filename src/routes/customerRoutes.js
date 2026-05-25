@@ -15,6 +15,7 @@ router.delete('/me/cart/items/:id', roleMiddleware(['pelanggan']), customerContr
 router.delete('/me/cart', roleMiddleware(['pelanggan']), customerController.clearCart);
 
 router.post('/me/checkout', roleMiddleware(['pelanggan']), customerController.checkoutCart);
+router.get('/me/transactions', roleMiddleware(['pelanggan']), customerController.getAllTransactions);
 router.get('/me/transactions/:id', roleMiddleware(['pelanggan']), customerController.getTrackingDetail);
 
 module.exports = router;

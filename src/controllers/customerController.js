@@ -265,6 +265,31 @@ exports.checkoutCart = async (req, res) => {
   }
 };
 
+exports.getAllTransactions = async (req, res) => {
+  try {
+    const customerId = req.user.id;
+
+    const { data: transactions, error } = await supabase
+      .from('transactions')
+      .select(`
+        id, 
+        created_at, 
+        order_status, 
+        grand_total,
+        depot:depots(name),
+        transaction_items ( quantity )
+      `)
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.status(200).json({ success: true, data: transactions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.getTrackingDetail = async (req, res) => {
   try {
     const customerId = req.user.id;

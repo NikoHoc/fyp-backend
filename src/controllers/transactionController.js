@@ -508,29 +508,23 @@ exports.rejectOnlineOrder = async (req, res) => {
 exports.midtransWebhook = async (req, res) => {
   try {
     const payload = req.body;
-    console.log("=== INCOMING WEBHOOK DARI MIDTRANS ===", payload);
 
     const orderIdStr = payload.order_id;
 
-    // 1. Bypass khusus untuk Tombol "TEST" dari Dashboard Midtrans
     if (!orderIdStr || !orderIdStr.startsWith('ONLINE-')) {
-      console.log("✅ Menerima Test Payload dari Midtrans. Test Berhasil.");
       return res.status(200).json({ status: "success", message: "Test Webhook Midtrans OK!" });
     }
 
-    // 2. Cari Transaksi menggunakan midtrans_order_id (BUKAN id biasa)
     const { data: trx, error: trxErr } = await supabase
       .from('transactions')
       .select('id, depot_id, payment_status, order_status')
-      .eq('midtrans_order_id', orderIdStr) // 💡 Perbaikan Krusial
+      .eq('midtrans_order_id', orderIdStr)
       .single();
 
     if (trxErr || !trx) {
-      console.log("❌ Transaksi tidak ditemukan di DB:", orderIdStr);
-      return res.status(200).json({ message: "Transaction not found" }); // Tetap balas 200 agar midtrans tidak ngespam
+      return res.status(200).json({ message: "Transaction not found" });
     }
 
-    // 3. Cari Server Key milik Depot
     const { data: config } = await supabase
       .from('payment_configs')
       .select('midtrans_server_key')
@@ -539,19 +533,16 @@ exports.midtransWebhook = async (req, res) => {
 
     if (!config) return res.status(200).json({ message: "Payment config not found" });
 
-    // 4. Verifikasi Keamanan (Signature Key) dengan KUNCI ASLI
-    const rawServerKey = decrypt(config.midtrans_server_key); // 💡 Perbaikan Krusial (Wajib di-decrypt)
+    const rawServerKey = decrypt(config.midtrans_server_key);
     
     const hash = crypto.createHash('sha512')
       .update(payload.order_id + payload.status_code + payload.gross_amount + rawServerKey)
       .digest('hex');
 
     if (hash !== payload.signature_key) {
-      console.log("❌ Signature tidak cocok! Potensi serangan.");
       return res.status(401).json({ message: "Invalid Signature" });
     }
 
-    // 5. Update Status Berdasarkan Laporan Midtrans
     let payment_status = trx.payment_status;
     let order_status = trx.order_status;
 
@@ -563,10 +554,8 @@ exports.midtransWebhook = async (req, res) => {
       order_status = 'cancelled';
     }
 
-    // 6. Simpan perubahan ke Database
     await supabase.from('transactions').update({ payment_status, order_status }).eq('id', trx.id);
-    console.log(`✅ Transaksi ${trx.id} berhasil diupdate menjadi: ${payment_status} & ${order_status}`);
-
+    
     return res.status(200).json({ status: "success" });
   } catch (error) {
     console.error("❌ Webhook Error:", error);
