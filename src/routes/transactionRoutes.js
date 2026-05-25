@@ -5,7 +5,7 @@ const transactionController = require("../controllers/transactionController");
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
-router.post("/notification", transactionController.midtransNotification);
+router.post('/webhook/midtrans', transactionController.midtransWebhook);
 
 router.use(authMiddleware);
 
@@ -13,8 +13,8 @@ router.post("/", roleMiddleware(["owner", "kasir", "pelayan"]), transactionContr
 router.post("/:id/items", roleMiddleware(["owner", "kasir", "pelayan"]), transactionController.addTransactionItems);
 router.put("/:id/customer", roleMiddleware(["owner", "kasir", "pelayan"]), transactionController.updateCustomerInfo);
 
-router.put("/:id/confirm", roleMiddleware(["owner", "kasir", "pelayan"]), transactionController.confirmTransaction);
-router.put("/:id/reject", roleMiddleware(["owner", "kasir", "pelayan"]), transactionController.rejectTransaction);
+router.put('/:id/accept', roleMiddleware(['kasir', 'owner', 'admin']), transactionController.acceptOnlineOrder);
+router.put('/:id/reject', roleMiddleware(['kasir', 'owner', 'admin']), transactionController.rejectOnlineOrder);
 
 router.put("/:id/status", roleMiddleware(["owner", "kasir", "pelayan"]), transactionController.updateTransactionStatus);
 

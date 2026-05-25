@@ -12,6 +12,7 @@ const stockRoutes = require('./stockRoutes');
 const transactionRoutes = require('./transactionRoutes');
 const paymentMethodRoutes = require('./paymentMethodRoutes');
 const settlementRoutes = require('./settlementRoutes')
+const customerRoutes = require('./customerRoutes');
 
 router.use('/auth', authRoutes);
 router.use('/depots', depotRoutes);
@@ -24,5 +25,6 @@ router.use('/stocks', stockRoutes);
 router.use('/transactions', transactionRoutes);
 router.use('/payment-methods', paymentMethodRoutes);
 router.use('/settlements', settlementRoutes);
+router.use('/customers', customerRoutes)
 
 module.exports = router;
