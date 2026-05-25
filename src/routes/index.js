@@ -15,6 +15,7 @@ const settlementRoutes = require('./settlementRoutes')
 const customerRoutes = require('./customerRoutes');
 const webhookRoutes = require('./webhookRoutes');
 
+router.use('/webhook', webhookRoutes);
 router.use('/auth', authRoutes);
 router.use('/depots', depotRoutes);
 router.use('/categories', categoryRoutes);
@@ -27,6 +28,5 @@ router.use('/transactions', transactionRoutes);
 router.use('/payment-methods', paymentMethodRoutes);
 router.use('/settlements', settlementRoutes);
 router.use('/customers', customerRoutes);
-router.use('/webhook', webhookRoutes);
 
 module.exports = router;
