@@ -8,7 +8,7 @@ exports.getTodaySummary = async (req, res) => {
       .from("transactions")
       .select(
         `
-        id, customer_name, subtotal, tax_amount, grand_total, type, payment_method, created_at,
+        id, customer_name, subtotal, tax_amount, grand_total, type, payment_method, created_at, pickup_method,
         table_id, tables(table_number),
         transaction_payments(paid_amount, change_amount, payment_methods(name))
       `,
@@ -145,32 +145,6 @@ exports.processSettlement = async (req, res) => {
     }
 
     return res.status(201).json({ status: true, message: "Tutup kasir berhasil", data: newSettlement });
-
-    // const settlementId = newSettlement.id;
-
-    // const { error: errUpdateTx } = await supabase
-    //   .from("transactions")
-    //   .update({ is_settled: true, settlement_id: settlementId })
-    //   .eq("depot_id", depot_id)
-    //   .eq("is_settled", false)
-    //   .eq("order_status", "completed")
-    //   .eq("payment_status", "paid");
-
-    // if (errUpdateTx) throw errUpdateTx;
-
-    // const { error: errUpdateExp } = await supabase
-    //   .from("operational_expenses")
-    //   .update({ is_settled: true, settlement_id: settlementId })
-    //   .eq("depot_id", depot_id)
-    //   .eq("is_settled", false);
-
-    // if (errUpdateExp) throw errUpdateExp;
-
-    // return res.status(200).json({
-    //   status: true,
-    //   message: "Proses Settlement berhasil diselesaikan!",
-    //   data: newSettlement,
-    // });
   } catch (error) {
     return res.status(500).json({ status: false, message: error.message });
   }
@@ -297,7 +271,7 @@ exports.getSettlementDetail = async (req, res) => {
     const { data: transactions, error: errTx } = await supabase
       .from("transactions")
       .select(`
-        id, customer_name, subtotal, tax_amount, grand_total, type, payment_method, created_at,
+        id, customer_name, subtotal, tax_amount, grand_total, type, payment_method, created_at, pickup_method,
         table_id, tables(table_number),
         transaction_payments(paid_amount, change_amount, payment_methods(name))
       `)

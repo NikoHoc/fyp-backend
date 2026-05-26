@@ -549,6 +549,55 @@ exports.midtransWebhook = async (req, res) => {
     if (payload.transaction_status === 'capture' || payload.transaction_status === 'settlement') {
       payment_status = 'paid';
       order_status = 'cooking'; 
+
+      try {
+        const { data: existingPayment } = await supabase
+          .from('transaction_payments')
+          .select('id')
+          .eq('transaction_id', trx.id)
+          .single();
+
+        if (!existingPayment) {
+          const { data: paymentObj } = await supabase
+            .from('transaction_payments')
+            .insert({
+              transaction_id: trx.id,
+              amount_paid: Math.round(parseFloat(payload.gross_amount)),
+              change_amount: 0,
+              payment_date: payload.settlement_time || new Date().toISOString()
+            })
+            .select()
+            .single();
+
+          if (paymentObj) {
+            let paymentMethodId = null;
+            const { data: midtransMethod } = await supabase
+              .from('payment_methods')
+              .select('id')
+              .ilike('name', 'Midtrans')
+              .single();
+              
+            if (midtransMethod) {
+              paymentMethodId = midtransMethod.id;
+            } else {
+              const { data: newMethod } = await supabase
+                .from('payment_methods')
+                .insert({ name: 'Midtrans' }) 
+                .select()
+                .single();
+              if (newMethod) paymentMethodId = newMethod.id;
+            }
+
+            await supabase.from('transaction_payment_items').insert({
+              transaction_payment_id: paymentObj.id,
+              payment_method_id: paymentMethodId,
+              amount: Math.round(parseFloat(payload.gross_amount))
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Gagal merekam detail pembayaran:", err);
+      }
     } else if (payload.transaction_status === 'deny' || payload.transaction_status === 'cancel' || payload.transaction_status === 'expire') {
       payment_status = 'failed';
       order_status = 'cancelled';
@@ -573,7 +622,10 @@ exports.getTransactions = async (req, res) => {
       .select(`
         *,
         tables (table_number),
-        transaction_items (*),
+        transaction_items (
+          *,
+          menus (name, image_url, categories (id, name, type))
+        ),
         transaction_payments (*)
       `)
       .eq("depot_id", depot_id);
