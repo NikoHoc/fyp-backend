@@ -191,12 +191,31 @@ exports.getCustomers = async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, username, phone_number, email, created_at")
+      .select(`
+        id, 
+        full_name, 
+        username, 
+        phone_number, 
+        email, 
+        created_at,
+        transactions!customer_id ( id ) 
+      `)
       .eq("role", "pelanggan")
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return res.status(200).json({ status: true, data });
+
+    const mappedData = data.map(customer => {
+      const total = customer.transactions ? customer.transactions.length : 0;
+      delete customer.transactions; 
+      
+      return {
+        ...customer,
+        total_transactions: total
+      };
+    });
+
+    return res.status(200).json({ status: true, data: mappedData });
   } catch (err) {
     return res.status(500).json({ status: false, message: err.message });
   }
