@@ -558,45 +558,63 @@ exports.midtransWebhook = async (req, res) => {
           .single();
 
         if (!existingPayment) {
-          const { data: paymentObj } = await supabase
+          let paymentMethodId = null;
+          const { data: midtransMethod } = await supabase
+            .from('payment_methods')
+            .select('id')
+            .ilike('name', 'Midtrans')
+            .single();
+            
+          if (midtransMethod) {
+            paymentMethodId = midtransMethod.id;
+          } else {
+            const { data: newMethod } = await supabase
+              .from('payment_methods')
+              .insert({ name: 'Midtrans' })
+              .select()
+              .single();
+            if (newMethod) paymentMethodId = newMethod.id;
+          }
+
+          const { data: paymentObj, error: payInsertErr } = await supabase
             .from('transaction_payments')
             .insert({
               transaction_id: trx.id,
-              amount_paid: Math.round(parseFloat(payload.gross_amount)),
-              change_amount: 0,
-              payment_date: payload.settlement_time || new Date().toISOString()
+              payment_method_id: paymentMethodId,
+              paid_amount: Math.round(parseFloat(payload.gross_amount)),
+              change_amount: 0
             })
             .select()
             .single();
 
-          if (paymentObj) {
-            let paymentMethodId = null;
-            const { data: midtransMethod } = await supabase
-              .from('payment_methods')
-              .select('id')
-              .ilike('name', 'Midtrans')
-              .single();
-              
-            if (midtransMethod) {
-              paymentMethodId = midtransMethod.id;
-            } else {
-              const { data: newMethod } = await supabase
-                .from('payment_methods')
-                .insert({ name: 'Midtrans' }) 
-                .select()
-                .single();
-              if (newMethod) paymentMethodId = newMethod.id;
-            }
+          if (payInsertErr) throw payInsertErr;
 
-            await supabase.from('transaction_payment_items').insert({
-              transaction_payment_id: paymentObj.id,
-              payment_method_id: paymentMethodId,
-              amount: Math.round(parseFloat(payload.gross_amount))
-            });
+          if (paymentObj) {
+            const { data: trxItems } = await supabase
+              .from('transaction_items')
+              .select('id, quantity, price_at_time')
+              .eq('transaction_id', trx.id);
+
+            if (trxItems && trxItems.length > 0) {
+              const paymentItemsPayload = trxItems.map(item => ({
+                transaction_payment_id: paymentObj.id,
+                transaction_item_id: item.id,
+                quantity: item.quantity,
+                price_at_time: item.price_at_time
+              }));
+
+              const { error: itemInsertErr } = await supabase
+                .from('transaction_payment_items')
+                .insert(paymentItemsPayload);
+
+              if (itemInsertErr) throw itemInsertErr;
+            }
+            
+            console.log("Log aliran dana pembayaran Midtrans berhasil disimpan!");
           }
         }
       } catch (err) {
-        console.error("Gagal merekam detail pembayaran:", err);
+        console.error("Gagal merekam detail pembayaran di Webhook:", err.message);
       }
     } else if (payload.transaction_status === 'deny' || payload.transaction_status === 'cancel' || payload.transaction_status === 'expire') {
       payment_status = 'failed';
