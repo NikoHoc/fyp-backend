@@ -609,7 +609,6 @@ exports.midtransWebhook = async (req, res) => {
 
               if (itemInsertErr) throw itemInsertErr;
             }
-            
             console.log("Log aliran dana pembayaran Midtrans berhasil disimpan!");
           }
         }
@@ -621,11 +620,31 @@ exports.midtransWebhook = async (req, res) => {
       order_status = 'cancelled';
     }
 
-    await supabase.from('transactions').update({ payment_status, order_status }).eq('id', trx.id);
+    let payment_method_string = trx.payment_method;
+
+    if (payment_status === 'paid') {
+      const { data: allPayments } = await supabase
+        .from("transaction_payments")
+        .select("payment_methods(name)")
+        .eq("transaction_id", trx.id);
+
+      if (allPayments && allPayments.length > 0) {
+        payment_method_string = [...new Set(allPayments.map(p => p.payment_methods.name))].join(", ");
+      } else {
+        payment_method_string = "Midtrans";
+      }
+    }
+
+    const updatePayload = { payment_status, order_status };
+    if (payment_method_string) {
+      updatePayload.payment_method = payment_method_string;
+    }
+
+    await supabase.from('transactions').update(updatePayload).eq('id', trx.id);
     
     return res.status(200).json({ status: "success" });
   } catch (error) {
-    console.error("❌ Webhook Error:", error);
+    console.error("Webhook Error:", error);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };

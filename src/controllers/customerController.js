@@ -40,9 +40,9 @@ exports.getCart = async (req, res) => {
       .from('carts')
       .select(`
         id, customer_id, depot_id,
-        cart_items (
-          id, quantity, is_half_portion, note,
-          menu:menus ( id, name, price, image_url )
+        items:cart_items(
+          id, menu_id, quantity, is_half_portion, note,
+          menu:menus(name, image_url, price, half_price) 
         )
       `)
       .eq('customer_id', customerId)
@@ -50,32 +50,48 @@ exports.getCart = async (req, res) => {
 
     if (cartErr && cartErr.code !== 'PGRST116') throw cartErr;
     
-    if (!cart || !cart.cart_items || cart.cart_items.length === 0) {
+    if (!cart || !cart.items || cart.items.length === 0) {
       return res.status(200).json({ success: true, data: null });
+    }
+
+    const menuIds = cart.items.map(item => item.menu_id);
+    const { data: depotMenus, error: dmError } = await supabase
+      .from('depot_menus')
+      .select('menu_id, is_available')
+      .eq('depot_id', cart.depot_id)
+      .in('menu_id', menuIds);
+
+    if (dmError) throw dmError;
+
+    const availabilityMap = {};
+    if (depotMenus) {
+      depotMenus.forEach(dm => {
+        availabilityMap[dm.menu_id] = dm.is_available;
+      });
     }
 
     let subtotal = 0;
     let totalItems = 0;
 
-    const formattedItems = cart.cart_items.map(item => {
-      const basePrice = item.menu.price;
-      const finalPrice = item.is_half_portion ? basePrice / 2 : basePrice;
-      const itemTotal = finalPrice * item.quantity;
+    const formattedItems = cart.items.map(item => {
+      const priceToUse = item.is_half_portion ? item.menu.half_price : item.menu.price;
+      const itemTotal = priceToUse * item.quantity;
       
       subtotal += itemTotal;
       totalItems += item.quantity;
 
       return {
         id: item.id,
-        menu_id: item.menu.id,
+        menu_id: item.menu_id,
         name: item.menu.name,
         image_url: item.menu.image_url,
-        price: finalPrice,
-        original_price: basePrice,
+        price: priceToUse,
+        original_price: priceToUse,
         quantity: item.quantity,
         is_half_portion: item.is_half_portion,
         note: item.note,
-        item_total: itemTotal
+        item_total: itemTotal,
+        is_available: availabilityMap[item.menu_id] !== undefined ? availabilityMap[item.menu_id] : true
       };
     });
 
