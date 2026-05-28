@@ -452,6 +452,10 @@ exports.acceptOnlineOrder = async (req, res) => {
       item_details: itemDetails,
       callbacks: {
         finish: `depot-bakso-asli://order-tracking/${trx.id}`
+      },
+      custom_expiry: {
+        expiry_duration: 15,
+        unit: 'minute'
       }
     };
 
@@ -545,6 +549,7 @@ exports.midtransWebhook = async (req, res) => {
 
     let payment_status = trx.payment_status;
     let order_status = trx.order_status;
+    let rejection_reason = null;
 
     if (payload.transaction_status === 'capture' || payload.transaction_status === 'settlement') {
       payment_status = 'paid';
@@ -618,6 +623,14 @@ exports.midtransWebhook = async (req, res) => {
     } else if (payload.transaction_status === 'deny' || payload.transaction_status === 'cancel' || payload.transaction_status === 'expire') {
       payment_status = 'failed';
       order_status = 'cancelled';
+
+      const reasonMap = {
+        'deny':   'Pembayaran ditolak oleh penyedia layanan pembayaran',
+        'cancel': 'Pembayaran dibatalkan oleh pelanggan',
+        'expire': 'Batas waktu pembayaran telah habis'
+      };
+
+      rejection_reason = reasonMap[payload.transaction_status] || 'Pembayaran gagal';
     }
 
     let payment_method_string = trx.payment_method;
@@ -639,6 +652,7 @@ exports.midtransWebhook = async (req, res) => {
     if (payment_method_string) {
       updatePayload.payment_method = payment_method_string;
     }
+    if (rejection_reason) updatePayload.rejection_reason = rejection_reason;
 
     await supabase.from('transactions').update(updatePayload).eq('id', trx.id);
     
